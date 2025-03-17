@@ -46,8 +46,9 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, h, dropout=0.1):
         # d_model: 输入维度，h: 注意力头的数量
         super().__init__()
-        self.d_k = d_model // h  # 每个头的维度
+        self.d_model = d_model
         self.h = h
+        self.d_k = d_model // h  # 每个头的维度
 
         # 定义四个线性变换：Q, K, V和最终输出
         self.W_q = nn.Linear(d_model, d_model)  # 查询向量变换
@@ -57,37 +58,96 @@ class MultiHeadAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)  # 注意力权重dropout
 
-    def forward(self, q, k, v, mask=None):
-        batch_size = q.size(0)  # 获取batch大小
+    def linear_transform(self, x, linear_layer):
+        """
+        对输入进行线性变换
+        :param x: 输入张量，形状为 (batch_size, seq_len, d_model)
+        :param linear_layer: 线性变换层
+        :return: 线性变换后的张量，形状为 (batch_size, seq_len, d_model)
+        """
+        return linear_layer(x)
 
-        # 线性变换 + 分割多头
-        # (batch_size, seq_len, d_model) -> (batch_size, seq_len, h, d_k) -> (batch_size, h, seq_len, d_k)
-        q = self.W_q(q).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
-        k = self.W_k(k).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
-        v = self.W_v(v).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
+    def split_heads(self, x, batch_size):
+        """
+        将线性变换后的张量分割成多个头
+        :param x: 线性变换后的张量，形状为 (batch_size, seq_len, d_model)
+        :param batch_size: 批量大小
+        :return: 分割成头后的张量，形状为 (batch_size, h, seq_len, d_k)
+        """
+        # 将 d_model 维度分割成 h 个 d_k 维度
+        x = x.view(batch_size, -1, self.h, self.d_k)
+        # 调整维度顺序，将头维度移到前面
+        x = x.transpose(1, 2)
+        return x
 
-        # 计算缩放点积注意力得分
+    def scaled_dot_product_attention(self, q, k, v, mask=None):
+        """
+        计算缩放点积注意力
+        :param q: 查询向量，形状为 (batch_size, h, seq_len, d_k)
+        :param k: 键向量，形状为 (batch_size, h, seq_len, d_k)
+        :param v: 值向量，形状为 (batch_size, h, seq_len, d_k)
+        :param mask: 掩码，形状为 (batch_size, h, seq_len, seq_len)
+        :return: 注意力输出和注意力权重
+        """
+        # 计算注意力得分，形状为 (batch_size, h, seq_len, seq_len)
         attn_scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.d_k)
 
-        # 应用掩码（将需要屏蔽的位置设为极小值）
+        # 应用掩码
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
 
-        # 计算注意力权重（softmax归一化）
-        attn_weights = F.softmax(attn_scores, dim=-1)
-        attn_weights = self.dropout(attn_weights)  # 应用dropout
+        # 计算注意力权重
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        attn_weights = self.dropout(attn_weights)
 
         # 计算上下文向量
-        output = attn_weights @ v  # (batch_size, h, seq_len, d_k)
+        output = attn_weights @ v  # 形状为 (batch_size, h, seq_len, d_k)
+        return output, attn_weights
 
-        # 合并多头 -> (batch_size, seq_len, d_model)
-        output = output.transpose(1, 2).contiguous().view(
-            batch_size, -1, self.h * self.d_k
-        )
+    def merge_heads(self, x, batch_size):
+        """
+        将多个头的输出合并
+        :param x: 多头注意力输出，形状为 (batch_size, h, seq_len, d_k)
+        :param batch_size: 批量大小
+        :return: 合并后的张量，形状为 (batch_size, seq_len, d_model)
+        """
+        # 调整维度顺序
+        x = x.transpose(1, 2).contiguous()
+        # 合并头维度和 d_k 维度
+        x = x.view(batch_size, -1, self.h * self.d_k)
+        return x
+
+    def final_transform(self, x):
+        """
+        对合并后的输出进行最终线性变换
+        :param x: 合并后的张量，形状为 (batch_size, seq_len, d_model)
+        :return: 最终输出，形状为 (batch_size, seq_len, d_model)
+        """
+        return self.W_o(x)
+
+    def forward(self, q, k, v, mask=None):
+        batch_size = q.size(0)  # 获取批量大小
+
+        # 对查询、键和值进行线性变换
+        q = self.linear_transform(q, self.W_q)
+        k = self.linear_transform(k, self.W_k)
+        v = self.linear_transform(v, self.W_v)
+
+        # 将线性变换后的张量分割成多个头
+        q = self.split_heads(q, batch_size)
+        k = self.split_heads(k, batch_size)
+        v = self.split_heads(v, batch_size)
+
+        # 计算多头注意力
+        output, attn_weights = self.scaled_dot_product_attention(q, k, v, mask)
+
+        # 合并多头输出
+        output = self.merge_heads(output, batch_size)
 
         # 最终线性变换
-        return self.W_o(output)
+        output = self.final_transform(output)
 
+        return output
 
 class FeedForward(nn.Module):
     """前馈神经网络"""

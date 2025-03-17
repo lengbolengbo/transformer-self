@@ -275,6 +275,9 @@ def generate_mask(src,tgt,pad_idx=0):
     ## src_mask = [[[[True, True, False]]]]  # 屏蔽第三个位置（填充）
     src_mask = (src != pad_idx).unsqueeze(1).unsqueeze(2) # (batch_size, 1, 1, src_len)
 
+
+
+
     # 屏蔽padding部分,假设目标序列 tgt = [[3, 4, 0]],pad_idx=0
     ## src_mask = [[[[True, True, False]]]]  # 屏蔽第三个位置（填充）
     tgt_mask = (tgt != pad_idx).unsqueeze(1).unsqueeze(2)
