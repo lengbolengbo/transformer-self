@@ -802,5 +802,5 @@ if __name__ == "__main__":
 本文档是参照讲解教程学习后，自己编写的Transformer  
 讲解教程: https://baijiahao.baidu.com/s?id=1651219987457222196&wfr=spider&for=pc  
 github：https://github.com/lengbolengbo/transformer-self  
-和鲸社区： https://www.heywhale.com/mw/project/67d82d3b7a5bc9d5e3872646?shareby=635791cb3f401e7af199f65e#
+和鲸社区： https://www.heywhale.com/mw/project/67d82d3b7a5bc9d5e3872646?shareby=635791cb3f401e7af199f65e#  
 CSDN：https://blog.csdn.net/lengbolengbo/article/details/146323821?fromshare=blogdetail&sharetype=blogdetail&sharerId=146323821&sharerefer=PC&sharesource=lengbolengbo&sharefrom=from_link
